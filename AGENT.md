@@ -3,7 +3,7 @@
 ## Identity
 
 - **name**: mesh-node-1
-- **model**: llama3.2
+- **model**: deepseek-v3.2:cloud
 - **role**: general-purpose assistant
 
 ## Persona

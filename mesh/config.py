@@ -10,7 +10,7 @@ from pathlib import Path
 @dataclass
 class AgentConfig:
     name: str = "mesh-node"
-    model: str = "llama3.2"
+    model: str = "deepseek-v3.2:cloud"
     role: str = "general-purpose assistant"
     persona: str = ""
     rules: list[str] = field(default_factory=list)

@@ -13,6 +13,7 @@ from mesh.discovery import Discovery
 from mesh.heartbeat import HeartbeatScheduler
 from mesh.ollama import OllamaClient
 from mesh.peer import PeerClient, PeerServer
+from mesh.repl import MeshREPL
 
 log = logging.getLogger("mesh")
 
@@ -70,6 +71,41 @@ async def run(config_dir: Path, port: int, ollama_url: str):
     log.info("Goodbye.")
 
 
+async def run_ui(config_dir: Path, ollama_url: str):
+    """UI-only mode: discovery + REPL, no server or heartbeat."""
+    agent, _, _ = load_config(config_dir)
+    skill_names: list[str] = []
+
+    discovery = Discovery(
+        node_name=f"{agent.name}-ui",
+        port=0,
+        model=agent.model,
+        skills=skill_names,
+    )
+    peer_client = PeerClient()
+
+    await discovery.start()
+    log.info("UI mode — discovering peers...")
+
+    # Give discovery a moment to find peers
+    await asyncio.sleep(1)
+
+    repl = MeshREPL(discovery, peer_client)
+
+    stop_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, stop_event.set)
+
+    try:
+        await repl.run()
+    finally:
+        log.info("Shutting down UI...")
+        await discovery.stop()
+        await peer_client.close()
+        log.info("Goodbye.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="ollama-mesh daemon")
     parser.add_argument(
@@ -90,6 +126,11 @@ def main():
         help="Ollama API base URL (default: http://localhost:11434)",
     )
     parser.add_argument(
+        "-u", "--ui",
+        action="store_true",
+        help="Launch interactive REPL (client-only, no server)",
+    )
+    parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Enable debug logging",
@@ -102,7 +143,10 @@ def main():
         datefmt="%H:%M:%S",
     )
 
-    asyncio.run(run(args.config_dir, args.port, args.ollama_url))
+    if args.ui:
+        asyncio.run(run_ui(args.config_dir, args.ollama_url))
+    else:
+        asyncio.run(run(args.config_dir, args.port, args.ollama_url))
 
 
 if __name__ == "__main__":
