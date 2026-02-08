@@ -63,7 +63,11 @@ class Discovery:
             properties=props,
             server=f"{self.node_name}.local.",
         )
-        await self._azc.async_register_service(self._info)
+        await self._azc.async_register_service(self._info, allow_name_change=True)
+        registered_name = self._info.name.replace(f".{SERVICE_TYPE}", "")
+        if registered_name != self.node_name:
+            log.warning("Name conflict — registered as %s instead of %s", registered_name, self.node_name)
+            self.node_name = registered_name
         log.info("Registered mDNS service %s on %s:%d", self.node_name, local_ip, self.port)
 
         # Browse for peers
@@ -121,7 +125,11 @@ class Discovery:
 
     async def stop(self):
         if self._browser:
-            self._browser.cancel()
+            # zeroconf >= 0.140 uses async_cancel(); older versions use cancel()
+            if hasattr(self._browser, "async_cancel"):
+                await self._browser.async_cancel()
+            elif hasattr(self._browser, "cancel"):
+                self._browser.cancel()
         if self._info and self._azc:
             await self._azc.async_unregister_service(self._info)
         if self._azc:
