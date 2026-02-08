@@ -137,8 +137,15 @@ def main():
     )
     args = parser.parse_args()
 
+    if args.ui and not args.verbose:
+        log_level = logging.WARNING
+    elif args.verbose:
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.INFO
+
     logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
+        level=log_level,
         format="%(asctime)s %(name)-12s %(levelname)-8s %(message)s",
         datefmt="%H:%M:%S",
     )

@@ -48,15 +48,14 @@ class MeshREPL:
             return
 
         from_name = self.discovery.node_name
-        print(f"Broadcasting to {len(peers)} peer(s)...")
+        print("Generating response...")
 
         # Fan out to all peers concurrently
         async def _ask(peer):
             try:
                 reply = await self.client.chat(peer, message, from_name)
                 return (peer.name, reply)
-            except Exception as e:
-                log.warning("Peer %s failed: %s", peer.name, e)
+            except Exception:
                 return (peer.name, None)
 
         results = await asyncio.gather(*[_ask(p) for p in peers])
@@ -67,18 +66,13 @@ class MeshREPL:
             return
 
         if len(responses) == 1:
-            name, reply = next(iter(responses.items()))
-            print(f"  [{name}]: {reply}")
+            _, reply = next(iter(responses.items()))
+            print(reply)
             return
 
         # Leader election: lexicographically first responding peer
         leader_name = sorted(responses.keys())[0]
         leader = self._resolve_peer(leader_name)
-
-        # Show individual responses
-        for name, reply in sorted(responses.items()):
-            tag = " (leader)" if name == leader_name else ""
-            print(f"  [{name}{tag}]: {reply}")
 
         # Ask leader to aggregate
         resp_block = "\n".join(f"[{n}]: {r}" for n, r in sorted(responses.items()))
@@ -89,12 +83,14 @@ class MeshREPL:
             f'Synthesize these into a single, most accurate response.'
         )
 
-        print(f"\nAggregating via leader ({leader_name})...")
         try:
             final = await self.client.chat(leader, agg_prompt, from_name)
-            print(f"\n  >> {final}")
+            print(final)
         except Exception as e:
-            print(f"Leader aggregation failed: {e}")
+            # Aggregation failed — show individual replies as fallback
+            print(f"Aggregation failed ({e}), individual replies:")
+            for name, reply in sorted(responses.items()):
+                print(f"  [{name}]: {reply}")
 
     async def _handle_line(self, line: str):
         parts = line.strip().split(None, 1)
@@ -152,9 +148,9 @@ class MeshREPL:
                 print(f"Unknown peer: {peer_name}")
                 return
             try:
-                print(f"Sending to {peer.name}...")
+                print("Generating response...")
                 reply = await self.client.chat(peer, message, self.discovery.node_name)
-                print(f"  {peer.name}: {reply}")
+                print(reply)
             except Exception as e:
                 print(f"Error: {e}")
             return

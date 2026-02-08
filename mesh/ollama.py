@@ -1,4 +1,4 @@
-"""Ollama HTTP API client — auto-detects /api/chat vs /api/generate."""
+"""Ollama HTTP API client — defaults to /api/chat, falls back to /api/generate."""
 
 from __future__ import annotations
 
@@ -13,23 +13,7 @@ class OllamaClient:
     def __init__(self, base_url: str = "http://localhost:11434"):
         self.base_url = base_url.rstrip("/")
         self._client = httpx.AsyncClient(base_url=self.base_url, timeout=120.0)
-        self._use_chat: bool | None = None  # None = not yet probed
-
-    async def _probe_endpoints(self):
-        """Check which generation endpoint is available."""
-        try:
-            resp = await self._client.post(
-                "/api/chat",
-                json={"model": "probe", "messages": [], "stream": False},
-            )
-            # 404 means the route doesn't exist; anything else (400, model-not-found, etc.)
-            # means the endpoint IS there, just our probe payload was bad.
-            self._use_chat = resp.status_code != 404
-        except httpx.HTTPError:
-            self._use_chat = False
-
-        endpoint = "/api/chat" if self._use_chat else "/api/generate"
-        log.info("Ollama endpoint detected: %s", endpoint)
+        self._use_generate = False  # only set True if /api/chat returns 404
 
     async def chat(
         self,
@@ -37,16 +21,10 @@ class OllamaClient:
         messages: list[dict[str, str]],
         system: str | None = None,
     ) -> str:
-        if self._use_chat is None:
-            await self._probe_endpoints()
+        if self._use_generate:
+            return await self._generate_api(model, messages, system)
 
-        if self._use_chat:
-            return await self._chat_api(model, messages, system)
-        return await self._generate_api(model, messages, system)
-
-    async def _chat_api(
-        self, model: str, messages: list[dict[str, str]], system: str | None
-    ) -> str:
+        # Try /api/chat first; fall back to /api/generate on 404
         msgs = list(messages)
         if system:
             msgs = [{"role": "system", "content": system}] + msgs
@@ -54,6 +32,11 @@ class OllamaClient:
         resp = await self._client.post(
             "/api/chat", json={"model": model, "messages": msgs, "stream": False}
         )
+        if resp.status_code == 404:
+            log.info("Ollama /api/chat not available, falling back to /api/generate")
+            self._use_generate = True
+            return await self._generate_api(model, messages, system)
+
         resp.raise_for_status()
         return resp.json()["message"]["content"]
 
